@@ -119,8 +119,7 @@ Measures similarity between two vectors by calculating the cosine of the angle b
 
 **Formula:**
 
-Cosine Similarity =  A.B
-                   |A|*|B|
+Cosine Similarity =  A.B / |A|*|B|
 
 ### 7. Retrieve Best Matching Chunk
 
