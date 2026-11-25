@@ -139,6 +139,16 @@ for (const { chunk, embedding } of chunkEmbeddings) {
 
 Compares the question embedding with every chunk embedding and retrieves the chunk with the highest similarity score.
 
+**How to interpret the cosine score value return from cosineSimilarity method:**
+
+Cosine score	Interpretation
+Close to 1.0	Vectors point in nearly the same direction
+0.8 – 0.99	    Often indicates strong similarity
+0.5 – 0.79	    Potentially related
+0 – 0.49	    Weak directional similarity
+Close to 0	    Nearly perpendicular vectors
+Negative	    Point in opposite directions
+
 ### 8. Generate Answer Using Gemini
 
 ```javascript
