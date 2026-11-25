@@ -141,6 +141,7 @@ Compares the question embedding with every chunk embedding and retrieves the chu
 
 **How to interpret the cosine score value return from cosineSimilarity method:**
 
+```javascript
 Cosine score	Interpretation
 Close to 1.0	Vectors point in nearly the same direction
 0.8 – 0.99	    Often indicates strong similarity
@@ -148,6 +149,7 @@ Close to 1.0	Vectors point in nearly the same direction
 0 – 0.49	    Weak directional similarity
 Close to 0	    Nearly perpendicular vectors
 Negative	    Point in opposite directions
+```
 
 ### 8. Generate Answer Using Gemini
 
