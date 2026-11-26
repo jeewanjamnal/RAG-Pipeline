@@ -16,7 +16,7 @@ A simple Retrieval-Augmented Generation (RAG) application that allows users to u
 Install the required dependencies:
 
 ```bash
-npm install express multer pdf-parse @qdrant/js-client-rest @google/genai uuid dotenv
+npm install express multer pdf-parse @qdrant/js-client-rest @google/genai dotenv
 ```
 
 ## Environment Variables

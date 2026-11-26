@@ -4,7 +4,7 @@ const pdfparse = require('pdf-parse');
 const fs = require('fs');
 const { QdrantClient } = require('@qdrant/js-client-rest');
 const { GoogleGenAI } = require('@google/genai');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -27,6 +27,20 @@ async function createEmbedding(text) {
     return response.embeddings[0].values;
 }
 
+// Generates a deterministic UUID-shaped ID from chunk text using SHA-256 hashing.
+// Ensures identical chunks always generate the same ID to prevent duplicate points in Qdrant.
+function generateChunkId(chunk) {
+    return crypto
+        .createHash('sha256')
+        .update(chunk.trim())
+        .digest('hex')
+        .slice(0, 32)
+        .replace(
+            /^(.{8})(.{4})(.{4})(.{4})(.{12})$/,
+            '$1-$2-$3-$4-$5'
+        );
+}
+
 app.get('/create-collection', async (req, res) => {
    try{
     await qdrant.createCollection('pdf-collection',{
@@ -47,7 +61,6 @@ app.post('/upload', upload.single('pdf'),async(req, res) => {
         return res.status(400).send('No file uploaded.');
     }
 
-
     try {
         const bufferData = fs.readFileSync(req.file.path);
         const pdfData = await pdfparse(bufferData);
@@ -65,7 +78,7 @@ app.post('/upload', upload.single('pdf'),async(req, res) => {
         }
 
         const points = chunkEmbeddings.map(({chunk, embedding}) => ({
-            id: uuidv4(),
+            id: generateChunkId(chunk),
             vector: embedding,
             payload: { text: chunk }
         }));
