@@ -1,228 +1,109 @@
-# PDF-Based RAG Application
+# PDF RAG using Node.js, Gemini & Qdrant
 
-A basic Retrieval-Augmented Generation (RAG) application built using Node.js, Express.js, and Google Gemini.
+A simple Retrieval-Augmented Generation (RAG) application that allows users to upload PDF documents, store their embeddings in Qdrant, and ask questions based on the document content.
 
 ## Tech Stack
 
-- Node.js & Express.js
-- Multer – PDF file upload
-- pdf-parse – PDF text extraction
-- Gemini API – Embeddings and answer generation
-- Cosine Similarity – Finding relevant document chunks
+- **Node.js & Express** – Backend API
+- **Multer** – PDF file uploads
+- **pdf-parse** – Extract text from PDFs
+- **Google Gemini** – Generate embeddings and answers
+- **Qdrant** – Vector database for similarity search
+- **UUID** – Generate unique IDs for document chunks
 
 ## Installation
 
+Install the required dependencies:
+
 ```bash
-npm init -y
-npm install express multer pdf-parse @google/genai dotenv
+npm install express multer pdf-parse @qdrant/js-client-rest @google/genai uuid dotenv
 ```
 
-Create a `.env` file:
+## Environment Variables
+
+Create a `.env` file in the project root:
 
 ```env
-GEMINI_API_KEY=your_api_key
+GEMINI_API_KEY=your_gemini_api_key
+QDRANT_URL=your_qdrant_url
+QDRANT_API_KEY=your_qdrant_api_key
 ```
 
 ## How It Works
 
-### 1. PDF Upload
+1. Upload a PDF using Multer.
+2. Extract text from the PDF using `pdf-parse`.
+3. Split extracted text into smaller chunks.
+4. Generate embeddings for each chunk using Gemini.
+5. Store embeddings and text payloads in Qdrant.
+6. Convert the user's question into an embedding.
+7. Search Qdrant for the most similar chunks using cosine similarity.
+8. Send the retrieved context and question to Gemini.
+9. Return the generated answer.
 
-```javascript
-const upload = multer({ dest: 'uploads/' });
+## API Endpoints
 
-app.post('/upload', upload.single('pdf'), async (req, res) => {
-```
-
-Multer handles a single PDF upload and temporarily stores it in the `uploads/` directory.
-
-### 2. Extract PDF Text
-
-```javascript
-const bufferData = fs.readFileSync(req.file.path);
-const pdfData = await pdfparse(bufferData);
-const text = pdfData.text;
-```
-
-Extracts readable text from the uploaded PDF.
-
-### 3. Split Text into Chunks
-
-```javascript
-const chunks = text
-    .split('\n\n')
-    .filter(chunk => chunk.trim() !== '');
-```
-
-Splits extracted text into smaller sections for embedding and retrieval.
-
-### 4. Generate Embeddings
-
-```javascript
-async function createEmbedding(text) {
-    const response = await ai.models.embedContent({
-        model: 'gemini-embedding-2',
-        contents: text,
-    });
-
-    return response.embeddings[0].values;
-}
-```
-
-Converts text into a numerical vector (embedding) that represents its semantic information.
-
-Generate an embedding for each document chunk and store it with the original text:
-
-```javascript
-chunkEmbeddings.push({
-    chunk,
-    embedding
-});
-```
-
-### 5. Generate Question Embedding
-
-```javascript
-const question = req.body.question;
-const questionEmbedding = await createEmbedding(question);
-```
-
-Converts the user's question into an embedding so it can be compared with document chunk embeddings.
-
-### 6. Calculate Cosine Similarity
-
-```javascript
-function cosineSimilarity(vectorA, vectorB) {
-    if (vectorA.length !== vectorB.length) {
-        throw new Error("Vectors must have the same dimensions");
-    }
-
-    let dotProduct = 0;
-    let magnitudeA = 0;
-    let magnitudeB = 0;
-
-    for (let i = 0; i < vectorA.length; i++) {
-        dotProduct += vectorA[i] * vectorB[i];
-        magnitudeA += vectorA[i] ** 2;
-        magnitudeB += vectorB[i] ** 2;
-    }
-
-    magnitudeA = Math.sqrt(magnitudeA);
-    magnitudeB = Math.sqrt(magnitudeB);
-
-    if (magnitudeA === 0 || magnitudeB === 0) return 0;
-
-    return dotProduct / (magnitudeA * magnitudeB);
-}
-```
-
-Measures similarity between two vectors by calculating the cosine of the angle between them.
-
-**Formula:**
-
-Cosine Similarity =  A.B / |A|*|B|
-
-### 7. Retrieve Best Matching Chunk
-
-```javascript
-let bestChunk = null;
-let bestScore = -Infinity;
-
-for (const { chunk, embedding } of chunkEmbeddings) {
-    const score = cosineSimilarity(questionEmbedding, embedding);
-
-    if (score > bestScore) {
-        bestScore = score;
-        bestChunk = chunk;
-    }
-}
-```
-
-Compares the question embedding with every chunk embedding and retrieves the chunk with the highest similarity score.
-
-**How to interpret the cosine score value return from cosineSimilarity method:**
-
-```javascript
-Cosine score	Interpretation
-Close to 1.0	Vectors point in nearly the same direction
-0.8 – 0.99	    Often indicates strong similarity
-0.5 – 0.79	    Potentially related
-0 – 0.49	    Weak directional similarity
-Close to 0	    Nearly perpendicular vectors
-Negative	    Point in opposite directions
-```
-
-### 8. Generate Answer Using Gemini
-
-```javascript
-const result = await ai.models.generateContent({
-    model: 'gemini-3.5-flash-lite',
-    contents: 'Answer the question ' + question +
-        ' using this context: ' + bestChunk,
-});
-```
-
-Sends the user's question and retrieved document context to Gemini to generate an answer.
-
-### 9. Return Response
-
-```javascript
-return res.status(200).json({
-    matchedChunk: bestChunk,
-    matchedScore: bestScore,
-    response: result.text
-});
-```
-
-Returns the retrieved chunk, its cosine similarity score, and the generated answer.
-
-## API Usage
-
-**Endpoint:** `POST /upload`
-
-**Content-Type:** `multipart/form-data`
-
-| Key | Type | Value |
+| Method | Endpoint | Description |
 |---|---|---|
-| pdf | File | Upload PDF |
-| question | Text | Ask a question about the PDF |
+| GET | `/create-collection` | Create Qdrant collection |
+| POST | `/upload` | Upload PDF and ask a question |
 
-**Run the application:**
+### Upload API
 
-```bash
-node server.js
-```
+For `/upload`, use `multipart/form-data` with:
 
-Server URL: `http://localhost:3000`
+- `pdf` – PDF file
+- `question` – Question about the PDF
 
-## RAG Workflow
+## Key Learning Concepts
 
-```text
-PDF Upload
-    ↓
-Extract Text
-    ↓
-Split into Chunks
-    ↓
-Generate Chunk Embeddings
-    ↓
-Generate Question Embedding
-    ↓
-Calculate Cosine Similarity
-    ↓
-Retrieve Best Matching Chunk
-    ↓
-Send Context + Question to Gemini
-    ↓
-Generate Answer
-    ↓
-Return JSON Response
-```
-
-## Key Learnings
-
-- PDF upload and text extraction
-- Text chunking
+- Text extraction and chunking
 - Vector embeddings
 - Cosine similarity
-- Semantic search and retrieval
+- Vector databases and Qdrant
+- Semantic search
 - Retrieval-Augmented Generation (RAG)
+
+## Understanding Cosine Similarity
+
+Cosine similarity measures how similar two vectors are based on the angle between them.
+
+### Cosine Similarity Score Interpretation
+
+| Cosine Score | Interpretation |
+|---|---|
+| Close to 1.0 | Vectors point in nearly the same direction |
+| 0.8 – 0.99 | Often indicates strong similarity |
+| 0.5 – 0.79 | Potentially related |
+| 0 – 0.49 | Weak directional similarity |
+| Close to 0 | Nearly perpendicular vectors |
+| Negative | Vectors point in opposite directions |
+
+### Example in RAG
+
+Suppose the user asks:
+
+**"What is machine learning?"**
+
+Qdrant compares the question embedding with stored document embeddings and ranks the chunks based on cosine similarity.
+
+| Retrieved Chunk | Cosine Score | Relevance |
+|---|---:|---|
+| Machine learning is a subset of AI. | 0.95 | High |
+| AI allows computers to learn. | 0.87 | High |
+| Python is a programming language. | 0.42 | Low |
+| The weather is sunny today. | 0.08 | Very Low |
+
+### Interpretation
+
+- Higher cosine scores generally indicate more relevant chunks.
+- Lower scores generally indicate less directional similarity.
+- Qdrant ranks matching vectors based on their similarity scores.
+- The highest-scoring chunks are retrieved and passed to Gemini as context.
+
+**Note:** These score ranges are illustrative, not universal relevance thresholds. Actual relevance depends on your embedding model and data. A high cosine score does not guarantee that a chunk answers the question.
+
+## Future Improvements
+
+- Separate PDF upload and question-answering APIs.
+- Retrieve multiple relevant chunks instead of just one.
