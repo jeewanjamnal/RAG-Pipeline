@@ -2,13 +2,19 @@ const express = require('express');
 const multer = require('multer');
 const pdfparse = require('pdf-parse');
 const fs = require('fs');
-const {GoogleGenAI} = require('@google/genai');
+const { QdrantClient } = require('@qdrant/js-client-rest');
+const { GoogleGenAI } = require('@google/genai');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const ai = new GoogleGenAI({apiKey: GEMINI_API_KEY});
+const qdrant = new QdrantClient({
+    url: process.env.QDRANT_URL, 
+    apiKey: process.env.QDRANT_API_KEY
+});
 
 const upload = multer({ dest: 'uploads/'});
 
@@ -21,35 +27,19 @@ async function createEmbedding(text) {
     return response.embeddings[0].values;
 }
 
-
-function cosineSimilarity(vectorA, vectorB) {
-
-    if (vectorA.length !== vectorB.length) {
-        throw new Error("Vectors must have the same dimensions");
-    }
-
-    let dotProduct = 0;
-    let magnitudeA = 0;
-    let magnitudeB = 0;
-
-    for (let i = 0; i < vectorA.length; i++) {
-
-        dotProduct += vectorA[i] * vectorB[i];
-
-        magnitudeA += vectorA[i] ** 2;
-
-        magnitudeB += vectorB[i] ** 2;
-    }
-
-    magnitudeA = Math.sqrt(magnitudeA);
-    magnitudeB = Math.sqrt(magnitudeB);
-
-    if (magnitudeA === 0 || magnitudeB === 0) {
-        return 0;
-    }
-
-    return dotProduct / (magnitudeA * magnitudeB);
-}
+app.get('/create-collection', async (req, res) => {
+   try{
+    await qdrant.createCollection('pdf-collection',{
+        vectors:{
+            size: 3072,
+            distance: 'Cosine'
+        }
+    });
+    res.status(200).json({ message: 'Collection created successfully' });
+   }catch(error){
+    res.status(500).json({ error: 'Failed to create collection' });
+   }
+});
 
 
 app.post('/upload', upload.single('pdf'),async(req, res) => {
@@ -57,14 +47,13 @@ app.post('/upload', upload.single('pdf'),async(req, res) => {
         return res.status(400).send('No file uploaded.');
     }
 
-    // console.log(req.file);
 
     try {
         const bufferData = fs.readFileSync(req.file.path);
         const pdfData = await pdfparse(bufferData);
         const text = pdfData.text;
 
-        const chunks = text.split('\n\n').filter(chunk => chunk.trim() !== ''); // Split by double newlines and filter out empty chunks
+        const chunks = text.split('\n\n').filter(chunk => chunk.trim() !== ''); 
        
         const chunkEmbeddings = [];
         for (const chunk of chunks) {
@@ -74,26 +63,37 @@ app.post('/upload', upload.single('pdf'),async(req, res) => {
                 embedding
             });
         }
+
+        const points = chunkEmbeddings.map(({chunk, embedding}) => ({
+            id: uuidv4(),
+            vector: embedding,
+            payload: { text: chunk }
+        }));
+
+        await qdrant.upsert('pdf-collection', {
+            points
+        });
         
         const question = req.body.question;
         const questionEmbedding = await createEmbedding(question);
-        let bestChunk = null;
-        let bestScore = -Infinity;
-         for (const {chunk, embedding} of chunkEmbeddings) {
-            const score = cosineSimilarity(questionEmbedding, embedding);
-            if (score > bestScore) {
-                bestScore = score;
-                bestChunk = chunk;
-            }
-        }
 
-        if(!bestChunk) {
+        const searchResult = await qdrant.query('pdf-collection', {
+            query: questionEmbedding,
+            limit: 1,
+            with_payload: true
+        });
+
+        if (searchResult.points.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'No matching chunk found for the question',
+                message: 'No matching chunk found',
                 data: null
             });
         }
+
+        const bestChunk = searchResult.points[0].payload.text;
+        const bestScore = searchResult.points[0].score;
+
         const result = await ai.models.generateContent({
             model: 'gemini-3.5-flash-lite',
             contents: 'Answer the question ' + question + ' using this context: ' + bestChunk,
